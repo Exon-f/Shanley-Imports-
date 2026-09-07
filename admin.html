@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shanley Imports — Admin</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: #fff;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .card {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 480px;
+    margin: 0 auto 20px auto;
+  }
+  h1 { font-size: 1.4rem; margin-top: 0; }
+  h2 { font-size: 1.1rem; color: #ffd27f; }
+  label { display: block; margin: 12px 0 4px; font-size: 0.9rem; opacity: 0.85; }
+  input, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 1rem;
+  }
+  button {
+    margin-top: 16px;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #ffb347;
+    color: #1a1a2e;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.98); }
+  #logoutBtn {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.3);
+    color: #fff;
+    margin-top: 8px;
+  }
+  .msg { margin-top: 10px; font-size: 0.9rem; }
+  .error { color: #ff8080; }
+  .success { color: #7fffb3; }
+  .hidden { display: none; }
+  .product-item {
+    padding: 10px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .product-item button {
+    width: auto;
+    padding: 6px 12px;
+    margin: 0 0 0 8px;
+    font-size: 0.8rem;
+    background: #ff5c5c;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<div class="card" id="loginCard">
+  <h1>🔒 Shanley Imports — Admin Login</h1>
+  <label for="email">Email</label>
+  <input type="email" id="email" placeholder="your@email.com">
+  <label for="password">Password</label>
+  <input type="password" id="password" placeholder="Password">
+  <button onclick="login()">Log In</button>
+  <div class="msg error" id="loginMsg"></div>
+</div>
+
+<div class="card hidden" id="adminCard">
+  <h1>Manage Products</h1>
+  <button id="logoutBtn" onclick="logout()">Log Out</button>
+
+  <h2>Add New Product</h2>
+  <label>Name</label>
+  <input type="text" id="p_name" placeholder="Ankara Tote Bag">
+  <label>Price (GHS)</label>
+  <input type="number" id="p_price" placeholder="150">
+  <label>Category</label>
+  <input type="text" id="p_category" placeholder="bags">
+  <label>Size</label>
+  <input type="text" id="p_size" placeholder="M">
+  <label>Discount (%)</label>
+  <input type="number" id="p_discount" placeholder="0">
+  <label>Image URL</label>
+  <input type="text" id="p_image" placeholder="https://...">
+  <label>In Stock?</label>
+  <select id="p_stock">
+    <option value="true">Yes</option>
+    <option value="false">No</option>
+  </select>
+  <button onclick="addProduct()">Add Product</button>
+  <div class="msg" id="productMsg"></div>
+
+  <h2 style="margin-top:24px;">Current Products</h2>
+  <div id="productList"></div>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAscCVf9weQ3FRI4iiCQ-C0v2Vb_mzkOM0",
+    authDomain: "shanley-imports-401a5.firebaseapp.com",
+    projectId: "shanley-imports-401a5",
+    storageBucket: "shanley-imports-401a5.firebasestorage.app",
+    messagingSenderId: "379246463762",
+    appId: "1:379246463762:web:e1b0a6900805d68b0c81cb",
+    measurementId: "G-ZDF32CP3VX"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  const loginCard = document.getElementById('loginCard');
+  const adminCard = document.getElementById('adminCard');
+  const loginMsg = document.getElementById('loginMsg');
+  const productMsg = document.getElementById('productMsg');
+  const productList = document.getElementById('productList');
+
+  auth.onAuthStateChanged(user => {
+    if (user) {
+      loginCard.classList.add('hidden');
+      adminCard.classList.remove('hidden');
+      loadProducts();
+    } else {
+      loginCard.classList.remove('hidden');
+      adminCard.classList.add('hidden');
+    }
+  });
+
+  function login() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    loginMsg.textContent = '';
+    auth.signInWithEmailAndPassword(email, password)
+      .catch(err => {
+        loginMsg.textContent = err.message;
+      });
+  }
+
+  function logout() {
+    auth.signOut();
+  }
+
+  function addProduct() {
+    const name = document.getElementById('p_name').value.trim();
+    const price = parseFloat(document.getElementById('p_price').value);
+    const category = document.getElementById('p_category').value.trim();
+    const size = document.getElementById('p_size').value.trim();
+    const discount = parseFloat(document.getElementById('p_discount').value) || 0;
+    const imageUrl = document.getElementById('p_image').value.trim();
+    const inStock = document.getElementById('p_stock').value === 'true';
+
+    if (!name || isNaN(price)) {
+      productMsg.textContent = 'Name and price are required.';
+      productMsg.className = 'msg error';
+      return;
+    }
+
+    db.collection('products').add({
+      name, price, category, size, discount, imageUrl, inStock,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => {
+      productMsg.textContent = 'Product added!';
+      productMsg.className = 'msg success';
+      ['p_name','p_price','p_category','p_size','p_discount','p_image'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+      loadProducts();
+    }).catch(err => {
+      productMsg.textContent = err.message;
+      productMsg.className = 'msg error';
+    });
+  }
+
+  function loadProducts() {
+    productList.innerHTML = 'Loading...';
+    db.collection('products').orderBy('createdAt', 'desc').get().then(snapshot => {
+      productList.innerHTML = '';
+      if (snapshot.empty) {
+        productList.innerHTML = '<p style="opacity:0.6;">No products yet.</p>';
+        return;
+      }
+      snapshot.forEach(doc => {
+        const p = doc.data();
+        const div = document.createElement('div');
+        div.className = 'product-item';
+        div.innerHTML = `
+          <span>${p.name} — GHS ${p.price} ${p.inStock ? '' : '(Out of stock)'}</span>
+          <button onclick="deleteProduct('${doc.id}')">Delete</button>
+        `;
+        productList.appendChild(div);
+      });
+    });
+  }
+
+  function deleteProduct(id) {
+    if (!confirm('Delete this product?')) return;
+    db.collection('products').doc(id).delete().then(loadProducts);
+  }
+</script>
+
+</body>
+</html>
