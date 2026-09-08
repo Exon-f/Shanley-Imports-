@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Shanley Imports — Checkout</title>
+
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e, #16213e);
+    color: #fff;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+  }
+  .card {
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 16px;
+    padding: 24px;
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.4rem; margin-top: 0; }
+  p.sub { opacity: 0.75; font-size: 0.9rem; margin-top: -8px; }
+  label { display: block; margin: 14px 0 4px; font-size: 0.9rem; opacity: 0.85; }
+  input, textarea {
+    width: 100%;
+    padding: 10px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    font-size: 1rem;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 70px; }
+  button {
+    margin-top: 20px;
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 10px;
+    background: #ffb347;
+    color: #1a1a2e;
+    font-weight: 700;
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.98); }
+  .msg { margin-top: 12px; font-size: 0.9rem; }
+  .error { color: #ff8080; }
+  .success { color: #7fffb3; }
+  .note {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    opacity: 0.7;
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>🛍️ Complete Your Order</h1>
+  <p class="sub">Fill this in and we'll reach out to arrange payment via Mobile Money.</p>
+
+  <label>Your Name</label>
+  <input type="text" id="c_name" placeholder="e.g. Ama Owusu">
+
+  <label>Phone Number</label>
+  <input type="tel" id="c_phone" placeholder="e.g. 0551234567">
+
+  <label>Delivery Address</label>
+  <textarea id="c_address" placeholder="House number, street, town..."></textarea>
+
+  <label>What are you ordering? (item names, sizes, quantities)</label>
+  <textarea id="c_items" placeholder="e.g. Ankara Tote Bag (M) x1, Beaded Necklace x2"></textarea>
+
+  <label>Estimated Total (GHS) — optional</label>
+  <input type="number" id="c_total" placeholder="e.g. 250">
+
+  <button onclick="submitOrder()">Submit Order</button>
+  <div class="msg" id="orderMsg"></div>
+
+  <p class="note">We'll contact you on the number provided to confirm your order and arrange Mobile Money payment.</p>
+</div>
+
+<script>
+  const firebaseConfig = {
+    apiKey: "AIzaSyAscCVf9weQ3FRI4iiCQ-C0v2Vb_mzkOM0",
+    authDomain: "shanley-imports-401a5.firebaseapp.com",
+    projectId: "shanley-imports-401a5",
+    storageBucket: "shanley-imports-401a5.firebasestorage.app",
+    messagingSenderId: "379246463762",
+    appId: "1:379246463762:web:e1b0a6900805d68b0c81cb",
+    measurementId: "G-ZDF32CP3VX"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const orderMsg = document.getElementById('orderMsg');
+
+  function submitOrder() {
+    const customerName = document.getElementById('c_name').value.trim();
+    const phone = document.getElementById('c_phone').value.trim();
+    const address = document.getElementById('c_address').value.trim();
+    const items = document.getElementById('c_items').value.trim();
+    const total = parseFloat(document.getElementById('c_total').value) || null;
+
+    if (!customerName || !phone || !items) {
+      orderMsg.textContent = 'Please fill in your name, phone number, and what you want to order.';
+      orderMsg.className = 'msg error';
+      return;
+    }
+
+    db.collection('orders').add({
+      customerName, phone, address, items, total,
+      status: 'new',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(() => {
+      orderMsg.textContent = 'Order submitted! We\'ll contact you shortly to confirm.';
+      orderMsg.className = 'msg success';
+      ['c_name','c_phone','c_address','c_items','c_total'].forEach(id => {
+        document.getElementById(id).value = '';
+      });
+    }).catch(err => {
+      orderMsg.textContent = err.message;
+      orderMsg.className = 'msg error';
+    });
+  }
+</script>
+
+</body>
+</html>
