@@ -5,9 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Shanley Imports — Admin</title>
 
+<!-- Firebase SDKs (compat version, works without npm) -->
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-storage-compat.js"></script>
 
 <style>
   * { box-sizing: border-box; }
@@ -78,10 +80,102 @@
     background: #ff5c5c;
     color: #fff;
   }
+  .product-item img {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 6px;
+    margin-right: 8px;
+  }
+  .product-item .info {
+    display: flex;
+    align-items: center;
+  }
+  .order-item {
+    padding: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    font-size: 0.9rem;
+  }
+  .order-item .top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .order-item .status {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(255,179,71,0.25);
+    color: #ffd27f;
+  }
+  .order-item .status.done {
+    background: rgba(127,255,179,0.2);
+    color: #7fffb3;
+  }
+  .order-item .items-line {
+    opacity: 0.8;
+    margin-top: 4px;
+  }
+  .order-item .contact-line {
+    margin-top: 4px;
+    opacity: 0.9;
+  }
+  .order-item .actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+  .order-item .actions button {
+    width: auto;
+    margin-top: 0;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+  .order-item .actions .done-btn {
+    background: #7fffb3;
+    color: #1a1a2e;
+  }
+  .order-item .actions .del-btn {
+    background: #ff5c5c;
+    color: #fff;
+  }
+  .upload-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 6px;
+  }
+  .upload-row input[type="file"] {
+    flex: 1;
+    padding: 6px;
+  }
+  #uploadPreview {
+    width: 70px;
+    height: 70px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-top: 10px;
+    display: none;
+  }
+  .progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 4px;
+    margin-top: 8px;
+    overflow: hidden;
+    display: none;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 0%;
+    background: #ffb347;
+    transition: width 0.2s;
+  }
 </style>
 </head>
 <body>
 
+<!-- LOGIN VIEW -->
 <div class="card" id="loginCard">
   <h1>🔒 Shanley Imports — Admin Login</h1>
   <label for="email">Email</label>
@@ -92,6 +186,7 @@
   <div class="msg error" id="loginMsg"></div>
 </div>
 
+<!-- ADMIN VIEW (hidden until logged in) -->
 <div class="card hidden" id="adminCard">
   <h1>Manage Products</h1>
   <button id="logoutBtn" onclick="logout()">Log Out</button>
@@ -107,8 +202,16 @@
   <input type="text" id="p_size" placeholder="M">
   <label>Discount (%)</label>
   <input type="number" id="p_discount" placeholder="0">
-  <label>Image URL</label>
-  <input type="text" id="p_image" placeholder="https://...">
+  <label>Product Photo</label>
+  <div class="upload-row">
+    <input type="file" id="p_photo" accept="image/*">
+  </div>
+  <img id="uploadPreview" alt="Preview">
+  <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="msg" id="uploadMsg"></div>
+
+  <label style="margin-top:16px;">Or paste an Image URL instead</label>
+  <input type="text" id="p_image" placeholder="https://... (optional if you uploaded a photo above)">
   <label>In Stock?</label>
   <select id="p_stock">
     <option value="true">Yes</option>
@@ -119,9 +222,13 @@
 
   <h2 style="margin-top:24px;">Current Products</h2>
   <div id="productList"></div>
+
+  <h2 style="margin-top:24px;">📦 Incoming Orders</h2>
+  <div id="orderList"></div>
 </div>
 
 <script>
+  // Your Firebase config
   const firebaseConfig = {
     apiKey: "AIzaSyAscCVf9weQ3FRI4iiCQ-C0v2Vb_mzkOM0",
     authDomain: "shanley-imports-401a5.firebaseapp.com",
@@ -135,18 +242,22 @@
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
+  const storage = firebase.storage();
 
   const loginCard = document.getElementById('loginCard');
   const adminCard = document.getElementById('adminCard');
   const loginMsg = document.getElementById('loginMsg');
   const productMsg = document.getElementById('productMsg');
   const productList = document.getElementById('productList');
+  const orderList = document.getElementById('orderList');
 
+  // Watch login state
   auth.onAuthStateChanged(user => {
     if (user) {
       loginCard.classList.add('hidden');
       adminCard.classList.remove('hidden');
       loadProducts();
+      loadOrders();
     } else {
       loginCard.classList.remove('hidden');
       adminCard.classList.add('hidden');
@@ -167,13 +278,67 @@
     auth.signOut();
   }
 
+  let uploadedImageUrl = ''; // holds the URL once a photo finishes uploading
+
+  const photoInput = document.getElementById('p_photo');
+  const uploadPreview = document.getElementById('uploadPreview');
+  const uploadMsg = document.getElementById('uploadMsg');
+  const progressBar = document.getElementById('progressBar');
+  const progressFill = document.getElementById('progressFill');
+
+  photoInput.addEventListener('change', () => {
+    const file = photoInput.files[0];
+    if (!file) return;
+
+    uploadedImageUrl = '';
+    uploadMsg.textContent = '';
+    uploadMsg.className = 'msg';
+
+    // Show a local preview immediately
+    const reader = new FileReader();
+    reader.onload = e => {
+      uploadPreview.src = e.target.result;
+      uploadPreview.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+
+    // Upload to Firebase Storage
+    const filename = `products/${Date.now()}_${file.name}`;
+    const ref = storage.ref().child(filename);
+    const task = ref.put(file);
+
+    progressBar.style.display = 'block';
+    progressFill.style.width = '0%';
+
+    task.on('state_changed',
+      snapshot => {
+        const pct = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+        progressFill.style.width = pct + '%';
+      },
+      err => {
+        uploadMsg.textContent = 'Upload failed: ' + err.message;
+        uploadMsg.className = 'msg error';
+        progressBar.style.display = 'none';
+      },
+      () => {
+        task.snapshot.ref.getDownloadURL().then(url => {
+          uploadedImageUrl = url;
+          uploadMsg.textContent = 'Photo uploaded!';
+          uploadMsg.className = 'msg success';
+          progressBar.style.display = 'none';
+        });
+      }
+    );
+  });
+
   function addProduct() {
     const name = document.getElementById('p_name').value.trim();
     const price = parseFloat(document.getElementById('p_price').value);
     const category = document.getElementById('p_category').value.trim();
     const size = document.getElementById('p_size').value.trim();
     const discount = parseFloat(document.getElementById('p_discount').value) || 0;
-    const imageUrl = document.getElementById('p_image').value.trim();
+    const manualUrl = document.getElementById('p_image').value.trim();
+    const imageUrl = uploadedImageUrl || manualUrl; // prefer uploaded photo
     const inStock = document.getElementById('p_stock').value === 'true';
 
     if (!name || isNaN(price)) {
@@ -191,6 +356,11 @@
       ['p_name','p_price','p_category','p_size','p_discount','p_image'].forEach(id => {
         document.getElementById(id).value = '';
       });
+      photoInput.value = '';
+      uploadPreview.style.display = 'none';
+      uploadPreview.src = '';
+      uploadedImageUrl = '';
+      uploadMsg.textContent = '';
       loadProducts();
     }).catch(err => {
       productMsg.textContent = err.message;
@@ -210,8 +380,9 @@
         const p = doc.data();
         const div = document.createElement('div');
         div.className = 'product-item';
+        const thumb = p.imageUrl ? `<img src="${p.imageUrl}" alt="">` : '';
         div.innerHTML = `
-          <span>${p.name} — GHS ${p.price} ${p.inStock ? '' : '(Out of stock)'}</span>
+          <span class="info">${thumb}${p.name} — GHS ${p.price} ${p.inStock ? '' : '(Out of stock)'}</span>
           <button onclick="deleteProduct('${doc.id}')">Delete</button>
         `;
         productList.appendChild(div);
@@ -222,6 +393,46 @@
   function deleteProduct(id) {
     if (!confirm('Delete this product?')) return;
     db.collection('products').doc(id).delete().then(loadProducts);
+  }
+
+  function loadOrders() {
+    orderList.innerHTML = 'Loading...';
+    db.collection('orders').orderBy('createdAt', 'desc').get().then(snapshot => {
+      orderList.innerHTML = '';
+      if (snapshot.empty) {
+        orderList.innerHTML = '<p style="opacity:0.6;">No orders yet.</p>';
+        return;
+      }
+      snapshot.forEach(doc => {
+        const o = doc.data();
+        const div = document.createElement('div');
+        div.className = 'order-item';
+        const statusClass = o.status === 'done' ? 'status done' : 'status';
+        const statusText = o.status === 'done' ? 'Completed' : 'New';
+        div.innerHTML = `
+          <div class="top-row">
+            <strong>${o.customerName || 'Unnamed'}</strong>
+            <span class="${statusClass}">${statusText}</span>
+          </div>
+          <div class="contact-line">📞 ${o.phone || 'N/A'} — 📍 ${o.address || 'N/A'}</div>
+          <div class="items-line">${o.items || ''} ${o.total ? '— GHS ' + o.total : ''}</div>
+          <div class="actions">
+            ${o.status !== 'done' ? `<button class="done-btn" onclick="markOrderDone('${doc.id}')">Mark Done</button>` : ''}
+            <button class="del-btn" onclick="deleteOrder('${doc.id}')">Delete</button>
+          </div>
+        `;
+        orderList.appendChild(div);
+      });
+    });
+  }
+
+  function markOrderDone(id) {
+    db.collection('orders').doc(id).update({ status: 'done' }).then(loadOrders);
+  }
+
+  function deleteOrder(id) {
+    if (!confirm('Delete this order?')) return;
+    db.collection('orders').doc(id).delete().then(loadOrders);
   }
 </script>
 
