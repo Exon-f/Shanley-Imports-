@@ -108,6 +108,20 @@
 
   const orderMsg = document.getElementById('orderMsg');
 
+  // Prefill items + total from cart passed by the storefront, if present
+  (function prefillFromCart() {
+    const raw = localStorage.getItem('shanley_checkout_cart');
+    if (!raw) return;
+    try {
+      const cart = JSON.parse(raw);
+      if (!Array.isArray(cart) || !cart.length) return;
+      const itemsText = cart.map(c => `${c.name} x${c.qty}`).join(', ');
+      const total = cart.reduce((sum, c) => sum + c.price * c.qty, 0);
+      document.getElementById('c_items').value = itemsText;
+      document.getElementById('c_total').value = total.toFixed(2);
+    } catch (e) {}
+  })();
+
   function submitOrder() {
     const customerName = document.getElementById('c_name').value.trim();
     const phone = document.getElementById('c_phone').value.trim();
@@ -131,6 +145,7 @@
       ['c_name','c_phone','c_address','c_items','c_total'].forEach(id => {
         document.getElementById(id).value = '';
       });
+      localStorage.removeItem('shanley_checkout_cart');
     }).catch(err => {
       orderMsg.textContent = err.message;
       orderMsg.className = 'msg error';
