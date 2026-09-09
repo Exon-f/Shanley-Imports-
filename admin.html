@@ -203,15 +203,10 @@
   <label>Discount (%)</label>
   <input type="number" id="p_discount" placeholder="0">
   <label>Product Photo</label>
-  <div class="upload-row">
-    <input type="file" id="p_photo" accept="image/*">
-  </div>
+  <input type="file" id="p_photo" accept="image/*">
   <img id="uploadPreview" alt="Preview">
-  <div class="progress-bar" id="progressBar"><div class="progress-fill" id="progressFill"></div></div>
   <div class="msg" id="uploadMsg"></div>
-
-  <label style="margin-top:16px;">Or paste an Image URL instead</label>
-  <input type="text" id="p_image" placeholder="https://... (optional if you uploaded a photo above)">
+  <input type="hidden" id="p_image">
   <label>In Stock?</label>
   <select id="p_stock">
     <option value="true">Yes</option>
@@ -278,57 +273,53 @@
     auth.signOut();
   }
 
-  let uploadedImageUrl = ''; // holds the URL once a photo finishes uploading
+  // ---------- Photo upload via imgbb (free, no Firebase billing needed) ----------
+  const IMGBB_API_KEY = '24e8f317855ffbaf593aaa23c3658291';
 
   const photoInput = document.getElementById('p_photo');
   const uploadPreview = document.getElementById('uploadPreview');
   const uploadMsg = document.getElementById('uploadMsg');
-  const progressBar = document.getElementById('progressBar');
-  const progressFill = document.getElementById('progressFill');
+  const p_image = document.getElementById('p_image');
 
   photoInput.addEventListener('change', () => {
     const file = photoInput.files[0];
     if (!file) return;
 
-    uploadedImageUrl = '';
-    uploadMsg.textContent = '';
+    p_image.value = '';
+    uploadMsg.textContent = 'Uploading photo...';
     uploadMsg.className = 'msg';
 
-    // Show a local preview immediately
     const reader = new FileReader();
-    reader.onload = e => {
-      uploadPreview.src = e.target.result;
-      uploadPreview.style.display = 'block';
+    reader.onload = () => {
+      // reader.result looks like "data:image/png;base64,AAAA..."
+      const base64Data = reader.result.split(',')[1];
+
+      const formData = new FormData();
+      formData.append('image', base64Data);
+
+      fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+        method: 'POST',
+        body: formData
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            p_image.value = data.data.url;
+            uploadPreview.src = data.data.url;
+            uploadPreview.style.display = 'block';
+            uploadMsg.textContent = 'Photo uploaded!';
+            uploadMsg.className = 'msg success';
+          } else {
+            uploadMsg.textContent = 'Upload failed. Please try again.';
+            uploadMsg.className = 'msg error';
+          }
+        })
+        .catch(() => {
+          uploadMsg.textContent = 'Upload failed. Check your connection and try again.';
+          uploadMsg.className = 'msg error';
+        });
     };
     reader.readAsDataURL(file);
-
-    // Upload to Firebase Storage
-    const filename = `products/${Date.now()}_${file.name}`;
-    const ref = storage.ref().child(filename);
-    const task = ref.put(file);
-
-    progressBar.style.display = 'block';
-    progressFill.style.width = '0%';
-
-    task.on('state_changed',
-      snapshot => {
-        const pct = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        progressFill.style.width = pct + '%';
-      },
-      err => {
-        uploadMsg.textContent = 'Upload failed: ' + err.message;
-        uploadMsg.className = 'msg error';
-        progressBar.style.display = 'none';
-      },
-      () => {
-        task.snapshot.ref.getDownloadURL().then(url => {
-          uploadedImageUrl = url;
-          uploadMsg.textContent = 'Photo uploaded!';
-          uploadMsg.className = 'msg success';
-          progressBar.style.display = 'none';
-        });
-      }
-    );
   });
 
   function addProduct() {
@@ -337,8 +328,7 @@
     const category = document.getElementById('p_category').value.trim();
     const size = document.getElementById('p_size').value.trim();
     const discount = parseFloat(document.getElementById('p_discount').value) || 0;
-    const manualUrl = document.getElementById('p_image').value.trim();
-    const imageUrl = uploadedImageUrl || manualUrl; // prefer uploaded photo
+    const imageUrl = document.getElementById('p_image').value.trim();
     const inStock = document.getElementById('p_stock').value === 'true';
 
     if (!name || isNaN(price)) {
@@ -359,7 +349,6 @@
       photoInput.value = '';
       uploadPreview.style.display = 'none';
       uploadPreview.src = '';
-      uploadedImageUrl = '';
       uploadMsg.textContent = '';
       loadProducts();
     }).catch(err => {
